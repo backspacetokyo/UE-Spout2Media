@@ -14,7 +14,10 @@ class SPOUT2MEDIA_API USpout2MediaSource
 	GENERATED_UCLASS_BODY()
 public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Spout2 Media")
-	FString SourceName = FString("Test Pattern");
+	FString SourceName = FString("Spout");
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Spout2 Media")
+	bool bSRGB = true;
 
 	virtual bool Validate() const override { return true; }
 	virtual FString GetUrl() const override;

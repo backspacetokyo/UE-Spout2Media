@@ -10,7 +10,9 @@
 
 #include "RHICommandList.h"
 #include "MediaShaders.h"
+
 #include "Spout2MediaTextureSample.h"
+#include "Spout2MediaSource.h"
 
 static spoutSenderNames senders;
 
@@ -182,6 +184,9 @@ bool FSpout2MediaPlayer::Open(const FString& Url, const IMediaOptions* Options)
 		CurrentState = EMediaState::Playing;
 		SubscribeName = FName(SourceName);
 	}
+
+	const USpout2MediaSource* Source = static_cast<const USpout2MediaSource*>(Options);
+	bSRGB = Source->bSRGB;
 	
 	return true;
 }
@@ -195,11 +200,11 @@ bool FSpout2MediaPlayer::Open(const TSharedRef<FArchive, ESPMode::ThreadSafe>& A
 void FSpout2MediaPlayer::TickFetch(FTimespan DeltaTime, FTimespan Timecode)
 {
 	unsigned int SpoutWidth = 0, SpoutHeight = 0;
-	HANDLE SpoutSharehandle = nullptr;
+	HANDLE SpoutShareHandle = nullptr;
 	DXGI_FORMAT SpoutFormat = DXGI_FORMAT_UNKNOWN;
 
 	const bool find_sender = senders.FindSender(
-		TCHAR_TO_ANSI(*SubscribeName.ToString()), SpoutWidth, SpoutHeight, SpoutSharehandle, (DWORD&)SpoutFormat);
+		TCHAR_TO_ANSI(*SubscribeName.ToString()), SpoutWidth, SpoutHeight, SpoutShareHandle, reinterpret_cast<DWORD&>(SpoutFormat));
 
 	EPixelFormat PixelFormat = PF_Unknown;
 
@@ -223,7 +228,7 @@ void FSpout2MediaPlayer::TickFetch(FTimespan DeltaTime, FTimespan Timecode)
 			Context = MakeShared<FSpoutReceiverContext>(SpoutWidth, SpoutHeight, SpoutFormat);
 		}
 		
-		ENQUEUE_RENDER_COMMAND(SpoutRecieverRenderThreadOp)([this, SpoutSharehandle](FRHICommandListImmediate& RHICmdList) {
+		ENQUEUE_RENDER_COMMAND(SpoutRecieverRenderThreadOp)([this, SpoutShareHandle](FRHICommandListImmediate& RHICmdList) {
 			check(IsInRenderingThread());
 
 			auto Sample = MakeShared<FSpout2MediaTextureSample, ESPMode::ThreadSafe>();
@@ -232,12 +237,14 @@ void FSpout2MediaPlayer::TickFetch(FTimespan DeltaTime, FTimespan Timecode)
 			Args.Height = Context->Height;
 			Args.DXFormat = Context->DXFormat;
 			Args.PixelFormat = Context->PixelFormat;
-			Args.SpoutSharehandle = SpoutSharehandle;
+			Args.SpoutSharehandle = SpoutShareHandle;
 			
 			Args.Context = Context->Context;
 			Args.D3D11Device = Context->D3D11Device;
 			Args.D3D12Device = Context->D3D12Device;
 			Args.D3D11on12Device = Context->D3D11on12Device;
+
+			Args.bSRGB = this->bSRGB;
 			
 			Sample->Initialize(Args);
 			

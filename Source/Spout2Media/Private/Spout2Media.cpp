@@ -19,9 +19,6 @@ void FSpout2MediaModule::StartupModule()
 	{
 		MediaModule->RegisterPlayerFactory(*this);
 	}
-
-	FString PluginShaderDir = FPaths::Combine(IPluginManager::Get().FindPlugin(TEXT("Spout2Media"))->GetBaseDir(), TEXT("Shaders"));
-	AddShaderSourceDirectoryMapping(TEXT("/Plugin/Spout2Media"), PluginShaderDir);
 }
 
 void FSpout2MediaModule::ShutdownModule()

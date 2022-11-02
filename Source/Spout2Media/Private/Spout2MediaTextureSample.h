@@ -44,6 +44,8 @@ public:
 		ID3D11Device* D3D11Device;
 		ID3D12Device* D3D12Device;
 		ID3D11On12Device* D3D11on12Device;
+
+		bool bSRGB;
 	} Args;
 	
 	void Initialize(const InitializeArguments& Args);

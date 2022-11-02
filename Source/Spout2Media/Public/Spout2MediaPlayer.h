@@ -95,6 +95,7 @@ private:
 	FString MediaUrl;
 
 	FName SubscribeName = "";
-
+	bool bSRGB = true;
+	
 	TSharedPtr<IMediaTextureSample, ESPMode::ThreadSafe> TextureSample;
 };
