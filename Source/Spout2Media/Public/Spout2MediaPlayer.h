@@ -5,18 +5,21 @@
 #include "CoreMinimal.h"
 #include "MediaIOCorePlayerBase.h"
 
-#include "Spout2MediaTracks.h"
-
 class SPOUT2MEDIA_API FSpout2MediaPlayer
 	: public IMediaPlayer
 	, protected IMediaCache
 	, protected IMediaView
 	, public IMediaControls
+	, public IMediaSamples
+	, public IMediaTracks
 {
+	struct FSpoutReceiverContext;
+	TSharedPtr<FSpoutReceiverContext> Context;
+
 public:
+	
 	FSpout2MediaPlayer(IMediaEventSink& InEventSink);
 	~FSpout2MediaPlayer();
-
 
 public:
 	
@@ -38,6 +41,7 @@ public:
 	virtual void TickFetch(FTimespan DeltaTime, FTimespan Timecode) override;
 	virtual void TickInput(FTimespan DeltaTime, FTimespan Timecode) override;
 
+	virtual bool GetPlayerFeatureFlag(EFeatureFlag flag) const override;
 protected:
 	
 	//~ IMediaControls interface
@@ -55,10 +59,41 @@ protected:
 	virtual bool SetLooping(bool Looping) override { return false; }
 	virtual bool SetRate(float Rate) override { return false; }
 
+public:
+	
+	//~ IMediaSamples interface
+
+	virtual bool FetchAudio(TRange<FTimespan> TimeRange, TSharedPtr<IMediaAudioSample, ESPMode::ThreadSafe>& OutSample) override { return false; }
+	virtual bool FetchCaption(TRange<FTimespan> TimeRange, TSharedPtr<IMediaOverlaySample, ESPMode::ThreadSafe>& OutSample) override { return false; }
+	virtual bool FetchMetadata(TRange<FTimespan> TimeRange, TSharedPtr<IMediaBinarySample, ESPMode::ThreadSafe>& OutSample) override { return false; }
+	virtual bool FetchVideo(TRange<FTimespan> TimeRange, TSharedPtr<IMediaTextureSample, ESPMode::ThreadSafe>& OutSample) override;
+	virtual void FlushSamples() override;
+	virtual EFetchBestSampleResult FetchBestVideoSampleForTimeRange(const TRange<FMediaTimeStamp> & TimeRange, TSharedPtr<IMediaTextureSample, ESPMode::ThreadSafe>& OutSample, bool bReverse) override;
+	virtual bool PeekVideoSampleTime(FMediaTimeStamp & TimeStamp) override;
+
+public:
+	
+	//~ IMediaTracks interface
+
+	virtual bool GetAudioTrackFormat(int32 TrackIndex, int32 FormatIndex, FMediaAudioTrackFormat& OutFormat) const override { return false; }
+	virtual int32 GetNumTracks(EMediaTrackType TrackType) const override { return 1; }
+	virtual int32 GetNumTrackFormats(EMediaTrackType TrackType, int32 TrackIndex) const override { return 1; }
+	virtual int32 GetSelectedTrack(EMediaTrackType TrackType) const override;
+	virtual FText GetTrackDisplayName(EMediaTrackType TrackType, int32 TrackIndex) const override;
+	virtual int32 GetTrackFormat(EMediaTrackType TrackType, int32 TrackIndex) const override;
+	virtual FString GetTrackLanguage(EMediaTrackType TrackType, int32 TrackIndex) const override;
+	virtual FString GetTrackName(EMediaTrackType TrackType, int32 TrackIndex) const override;
+	virtual bool GetVideoTrackFormat(int32 TrackIndex, int32 FormatIndex, FMediaVideoTrackFormat& OutFormat) const override;
+	virtual bool SelectTrack(EMediaTrackType TrackType, int32 TrackIndex) override;
+	virtual bool SetTrackFormat(EMediaTrackType TrackType, int32 TrackIndex, int32 FormatIndex) override;
+	virtual bool SetVideoTrackFrameRate(int32 TrackIndex, int32 FormatIndex, float FrameRate) override;
+	
 private:
 
 	EMediaState CurrentState = EMediaState::Closed;
 	FString MediaUrl;
 
-	TSharedPtr<FSpout2MediaTracks, ESPMode::ThreadSafe> Tracks;
+	FName SubscribeName = "";
+
+	TSharedPtr<IMediaTextureSample, ESPMode::ThreadSafe> TextureSample;
 };

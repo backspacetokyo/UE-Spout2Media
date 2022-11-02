@@ -1,7 +1,9 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Spout2Media.h"
+
 #include "IMediaModule.h"
+#include "Interfaces/IPluginManager.h"
 
 #include "Spout2MediaPlayer.h"
 
@@ -17,6 +19,9 @@ void FSpout2MediaModule::StartupModule()
 	{
 		MediaModule->RegisterPlayerFactory(*this);
 	}
+
+	FString PluginShaderDir = FPaths::Combine(IPluginManager::Get().FindPlugin(TEXT("Spout2Media"))->GetBaseDir(), TEXT("Shaders"));
+	AddShaderSourceDirectoryMapping(TEXT("/Plugin/Spout2Media"), PluginShaderDir);
 }
 
 void FSpout2MediaModule::ShutdownModule()

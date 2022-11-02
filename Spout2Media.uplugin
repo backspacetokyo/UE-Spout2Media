@@ -14,11 +14,14 @@
 	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
 	"Installed": false,
+	"SupportedTargetPlatforms": [
+		"Win64"
+	],
 	"Modules": [
 		{
 			"Name": "Spout2Media",
 			"Type": "Runtime",
-			"LoadingPhase": "Default",
+			"LoadingPhase": "PostEngineInit",
 			"WhitelistPlatforms": [
 				"Win64"
 			]
@@ -26,7 +29,7 @@
 		{
 			"Name": "Spout2MediaEditor",
 			"Type": "Editor",
-			"LoadingPhase": "PostEngineInit",
+			"LoadingPhase": "Default",
 			"WhitelistPlatforms": [
 				"Win64"
 			]
