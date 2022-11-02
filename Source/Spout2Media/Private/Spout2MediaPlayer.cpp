@@ -8,73 +8,11 @@
 #include "Spout.h"
 #include "Windows/HideWindowsPlatformTypes.h"
 
-// #include "GlobalShader.h"
-// #include "UniformBuffer.h"
 #include "RHICommandList.h"
-// #include "RHIUtilities.h"
 #include "MediaShaders.h"
 #include "Spout2MediaTextureSample.h"
 
 static spoutSenderNames senders;
-
-// class FTextureCopyVertexShader : public FGlobalShader
-// {
-// 	DECLARE_SHADER_TYPE(FTextureCopyVertexShader, Global);
-// public:
-//
-// 	static bool ShouldCache(EShaderPlatform Platform) { return true; }
-//
-// 	FTextureCopyVertexShader(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
-// 		FGlobalShader(Initializer)
-// 	{}
-// 	FTextureCopyVertexShader() {}
-//
-// 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
-// 	{
-// 		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
-// 	}
-// };
-//
-// class FTextureCopyPixelShader : public FGlobalShader
-// {
-// 	DECLARE_SHADER_TYPE(FTextureCopyPixelShader, Global);
-// public:
-//
-// #if (ENGINE_MAJOR_VERSION == 4 && ENGINE_MINOR_VERSION >= 25) || (ENGINE_MAJOR_VERSION == 5)
-// 	LAYOUT_FIELD(FShaderResourceParameter, SrcTexture);
-// #else ENGINE_MAJOR_VERSION == 4 && ENGINE_MINOR_VERSION <= 24
-// 	FShaderResourceParameter SrcTexture;
-//
-// 	virtual bool Serialize(FArchive& Ar) override
-// 	{
-// 		bool bShaderHasOutdatedParams = FGlobalShader::Serialize(Ar);
-// 		Ar << SrcTexture;
-// 		return bShaderHasOutdatedParams;
-// 	}
-// #endif
-//
-// 	static bool ShouldCache(EShaderPlatform Platform) { return true; }
-//
-// 	FTextureCopyPixelShader(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
-// 		FGlobalShader(Initializer)
-// 	{
-// 		SrcTexture.Bind(Initializer.ParameterMap, TEXT("SrcTexture"));
-// 	}
-// 	FTextureCopyPixelShader() {}
-//
-// 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
-// 	{
-// 		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
-// 	}
-// };
-//
-// struct FTextureVertex
-// {
-// 	FVector4 Position;
-// 	FVector2D UV;
-// };
-
-// IMPLEMENT_SHADER_TYPE(, FTextureCopyPixelShader, TEXT("/Plugin/Spout2Media/SpoutReceiverCopyShader.usf"), TEXT("MainPixelShader"), SF_Pixel)
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -127,7 +65,7 @@ struct FSpout2MediaPlayer::FSpoutReceiverContext
 				nullptr
 			) == S_OK);
 
-			verify(D3D11Device->QueryInterface(__uuidof(ID3D11On12Device), (void**)&D3D11on12Device) == S_OK);
+			verify(D3D11Device->QueryInterface(__uuidof(ID3D11On12Device), reinterpret_cast<void**>(&D3D11on12Device)) == S_OK);
 		}
 		else throw;
 	}
@@ -174,6 +112,7 @@ FSpout2MediaPlayer::~FSpout2MediaPlayer()
 
 void FSpout2MediaPlayer::Close()
 {
+	CurrentState = EMediaState::Closed;
 	Context.Reset();
 }
 
@@ -312,12 +251,12 @@ void FSpout2MediaPlayer::TickFetch(FTimespan DeltaTime, FTimespan Timecode)
 
 void FSpout2MediaPlayer::TickInput(FTimespan DeltaTime, FTimespan Timecode)
 {
-	
 }
 
 bool FSpout2MediaPlayer::GetPlayerFeatureFlag(EFeatureFlag flag) const
 {
-	return flag == IMediaPlayer::EFeatureFlag::AlwaysPullNewestVideoFrame;
+	return flag == IMediaPlayer::EFeatureFlag::AlwaysPullNewestVideoFrame
+		|| flag == IMediaPlayer::EFeatureFlag::UseRealtimeWithVideoOnly;
 }
 
 /////
@@ -397,24 +336,28 @@ FString FSpout2MediaPlayer::GetTrackName(EMediaTrackType TrackType, int32 TrackI
 bool FSpout2MediaPlayer::GetVideoTrackFormat(int32 TrackIndex, int32 FormatIndex,
 	FMediaVideoTrackFormat& OutFormat) const
 {
-	OutFormat.FrameRate = 60;
-	OutFormat.FrameRates = TRange<float>(60, 60);
-	OutFormat.Dim = FIntPoint(320, 240);
+	OutFormat.FrameRate = 0;
+	OutFormat.FrameRates = TRange<float>(0, 0);
+
+	if (TextureSample)
+	{
+		OutFormat.Dim = TextureSample->GetDim();
+	}
 	
-	return true;
+	return false;
 }
 
 bool FSpout2MediaPlayer::SelectTrack(EMediaTrackType TrackType, int32 TrackIndex)
 {
-	return true;
+	return false;
 }
 
 bool FSpout2MediaPlayer::SetTrackFormat(EMediaTrackType TrackType, int32 TrackIndex, int32 FormatIndex)
 {
-	return true;
+	return false;
 }
 
 bool FSpout2MediaPlayer::SetVideoTrackFrameRate(int32 TrackIndex, int32 FormatIndex, float FrameRate)
 {
-	return true;
+	return false;
 }

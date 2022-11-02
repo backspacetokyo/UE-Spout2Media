@@ -42,6 +42,7 @@ public:
 	virtual void TickInput(FTimespan DeltaTime, FTimespan Timecode) override;
 
 	virtual bool GetPlayerFeatureFlag(EFeatureFlag flag) const override;
+	
 protected:
 	
 	//~ IMediaControls interface
