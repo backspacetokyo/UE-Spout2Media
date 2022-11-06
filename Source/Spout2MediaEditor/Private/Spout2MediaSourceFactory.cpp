@@ -19,7 +19,7 @@ USpout2MediaSourceFactory::USpout2MediaSourceFactory(const FObjectInitializer& O
 
 FText USpout2MediaSourceFactory::GetDisplayName() const
 {
-	return LOCTEXT("Spout2MediaSourceFactoryDisplayName", "Spout2 Source");
+	return LOCTEXT("Spout2MediaSourceFactoryDisplayName", "Spout2 Media Source");
 }
 
 uint32 USpout2MediaSourceFactory::GetMenuCategories() const

@@ -72,6 +72,7 @@ public class Spout2Media : ModuleRules
 			{
 				"Core",
 				"MediaAssets",
+				"MediaIOCore",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -86,7 +87,7 @@ public class Spout2Media : ModuleRules
 				"SlateCore",
 				"RenderCore",
 				"MediaUtils",
-				"MediaIOCore",
+				
 				"RHI",
 				"Projects",
 				"D3D11RHI",

@@ -32,7 +32,6 @@ void FSpout2MediaTextureSample::Initialize(const InitializeArguments& Args_)
 	if (RHIName == TEXT("D3D12"))
 	{
 		D3D11_RESOURCE_FLAGS rf11 = {};
-	
 		ID3D12Resource* NativeTex = (ID3D12Resource*)Texture->GetNativeResource();
 	
 		verify(Args.D3D11on12Device->CreateWrappedResource(
