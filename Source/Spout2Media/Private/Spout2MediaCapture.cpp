@@ -131,25 +131,23 @@ struct USpout2MediaCapture::FSpoutSenderContext
 
 		if (!DeviceContext)
 			return;
-
+		
 		if (RHIName == TEXT("D3D11"))
 		{
 			ID3D11Texture2D* NativeTex = (ID3D11Texture2D*)InTexture->GetNativeResource();
-
+		
 			this->DeviceContext->CopyResource(SendingTexture, NativeTex);
 			this->DeviceContext->Flush();
-
+		
 			verify(senders.UpdateSender(SenderName_str.c_str(),
 				Width, Height,
 				SharedSendingHandle));
 		}
 		else if (RHIName == TEXT("D3D12"))
 		{
-			// D3D11on12Device->AcquireWrappedResources(&WrappedDX11Resource, 1);
 			DeviceContext->CopyResource(SendingTexture, WrappedDX11Resource);
-			// D3D11on12Device->ReleaseWrappedResources(&WrappedDX11Resource, 1);
 			DeviceContext->Flush();
-
+		
 			verify(senders.UpdateSender(SenderName_str.c_str(),
 				Width, Height,
 				SharedSendingHandle));
@@ -226,8 +224,6 @@ void USpout2MediaCapture::OnRHITextureCaptured_RenderingThread(const FCaptureBas
 
 bool USpout2MediaCapture::InitSpout(USpout2MediaOutput* Output)
 {
-	// Context = MakeShared<FSpoutSenderContext, ESPMode::ThreadSafe>(FName(Output->SourceName));
-	
 	SetState(EMediaCaptureState::Capturing);
 	return true;
 }
