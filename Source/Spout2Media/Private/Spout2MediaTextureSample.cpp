@@ -29,9 +29,6 @@ void FSpout2MediaTextureSample::Initialize(const InitializeArguments& Args_)
 		);
 	TextureDesc.SetFlags(Flags);
 	Texture = RHICreateTexture(TextureDesc);
-	// Texture = RHICreateTexture2D(Args.Width, Args.Height, Args.PixelFormat,
-	// 	1, 1,
-	// 	Flags, CreateInfo);
 	
 	RHIName = GDynamicRHI->GetName();
 	
@@ -44,7 +41,7 @@ void FSpout2MediaTextureSample::Initialize(const InitializeArguments& Args_)
 			NativeTex, &rf11,
 			D3D12_RESOURCE_STATE_COPY_DEST,
 			D3D12_RESOURCE_STATE_PRESENT, __uuidof(ID3D11Resource),
-			(void**)&WrappedDX11Resource) == S_OK);\
+			(void**)&WrappedDX11Resource) == S_OK);
 
 		NativeTex->Release();
 	}

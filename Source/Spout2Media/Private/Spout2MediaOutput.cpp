@@ -23,7 +23,7 @@ FIntPoint USpout2MediaOutput::GetRequestedSize() const
 EPixelFormat USpout2MediaOutput::GetRequestedPixelFormat() const
 {
 	EPixelFormat Result = PF_A2B10G10R10;
-	Result = PF_FloatRGBA;
+	// Result = PF_FloatRGBA;
 	return Result;
 }
 

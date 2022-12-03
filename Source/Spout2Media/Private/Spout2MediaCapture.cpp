@@ -13,7 +13,6 @@ struct USpout2MediaCapture::FSpoutSenderContext
 	FString SenderName;
 	uint32 Width, Height;
 	EPixelFormat PixelFormat;
-	// FTextureRHIRef InTexture;
 
 	std::string SenderName_str;
 
@@ -21,7 +20,6 @@ struct USpout2MediaCapture::FSpoutSenderContext
 	ID3D11Device* D3D11Device = nullptr;
 	
 	ID3D11On12Device* D3D11on12Device = nullptr;
-	// ID3D11Resource* WrappedDX11Resource = nullptr;
 	TMap<FTextureRHIRef, ID3D11Resource*> WrappedDX11ResourceMap;
 
 	spoutSenderNames senders;
