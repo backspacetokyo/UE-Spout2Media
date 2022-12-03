@@ -23,9 +23,15 @@ void FSpout2MediaTextureSample::Initialize(const InitializeArguments& Args_)
 		Flags |= ETextureCreateFlags::SRGB;
 	
 	FRHIResourceCreateInfo CreateInfo(L"Spout2MediaTextureSample");
-	Texture = RHICreateTexture2D(Args.Width, Args.Height, Args.PixelFormat,
-		1, 1,
-		Flags, CreateInfo);
+	FRHITextureCreateDesc TextureDesc = FRHITextureCreateDesc::Create2D(
+		L"Spout2MediaTextureSample",
+		FIntPoint(Args.Width, Args.Height), Args.PixelFormat
+		);
+	TextureDesc.SetFlags(Flags);
+	Texture = RHICreateTexture(TextureDesc);
+	// Texture = RHICreateTexture2D(Args.Width, Args.Height, Args.PixelFormat,
+	// 	1, 1,
+	// 	Flags, CreateInfo);
 	
 	RHIName = GDynamicRHI->GetName();
 	

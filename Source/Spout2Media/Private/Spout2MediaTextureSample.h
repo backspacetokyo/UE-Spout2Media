@@ -13,7 +13,6 @@
 #include "Spout.h"
 #include "Windows/HideWindowsPlatformTypes.h"
 
-class FRHITexture2D;
 class FSpout2MediaPlayer;
 
 class SPOUT2MEDIA_API FSpout2MediaTextureSample

@@ -13,7 +13,7 @@ struct USpout2MediaCapture::FSpoutSenderContext
 	FString SenderName;
 	uint32 Width, Height;
 	EPixelFormat PixelFormat;
-	FTextureRHIRef InTexture;
+	// FTextureRHIRef InTexture;
 
 	std::string SenderName_str;
 
@@ -21,7 +21,8 @@ struct USpout2MediaCapture::FSpoutSenderContext
 	ID3D11Device* D3D11Device = nullptr;
 	
 	ID3D11On12Device* D3D11on12Device = nullptr;
-	ID3D11Resource* WrappedDX11Resource = nullptr;
+	// ID3D11Resource* WrappedDX11Resource = nullptr;
+	TMap<FTextureRHIRef, ID3D11Resource*> WrappedDX11ResourceMap;
 
 	spoutSenderNames senders;
 	spoutDirectX sdx;
@@ -36,10 +37,9 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		, Width(Width)
 		, Height(Height)
 		, PixelFormat(PixelFormat)
-		, InTexture(InTexture)
 	{
 		SenderName_str = TCHAR_TO_ANSI(*SenderName);
-		InitSpout();
+		InitSpout(InTexture);
 	}
 
 	~FSpoutSenderContext()
@@ -47,11 +47,9 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		DisposeSpout();
 	}
 
-	void InitSpout()
+	void InitSpout(FTextureRHIRef InTexture)
 	{
 		const FString RHIName = GDynamicRHI->GetName();
-		ID3D12Resource* NativeTex = (ID3D12Resource*)InTexture->GetNativeResource();
-		D3D12_RESOURCE_DESC desc = NativeTex->GetDesc();
 
 		if (RHIName == TEXT("D3D11"))
 		{
@@ -77,19 +75,13 @@ struct USpout2MediaCapture::FSpoutSenderContext
 			) == S_OK);
 
 			verify(D3D11Device->QueryInterface(__uuidof(ID3D11On12Device), (void**)&D3D11on12Device) == S_OK);
-
-			D3D11_RESOURCE_FLAGS rf11 = {};
-			verify(D3D11on12Device->CreateWrappedResource(
-				NativeTex, &rf11,
-				D3D12_RESOURCE_STATE_COPY_SOURCE,
-				D3D12_RESOURCE_STATE_PRESENT, __uuidof(ID3D11Resource),
-				(void**)&WrappedDX11Resource) == S_OK);
-
-			NativeTex->Release();
 		}
 
-		verify(sdx.CreateSharedDX11Texture(D3D11Device, Width, Height, desc.Format, &SendingTexture, SharedSendingHandle));
+		ID3D12Resource* NativeTex = (ID3D12Resource*)InTexture->GetNativeResource();
+		D3D12_RESOURCE_DESC desc = NativeTex->GetDesc();
+		
 		verify(senders.CreateSender(SenderName_str.c_str(), Width, Height, SharedSendingHandle, desc.Format));
+		verify(sdx.CreateSharedDX11Texture(D3D11Device, Width, Height, desc.Format, &SendingTexture, SharedSendingHandle));
 	}
 
 	void DisposeSpout()
@@ -106,10 +98,12 @@ struct USpout2MediaCapture::FSpoutSenderContext
 			DeviceContext = nullptr;
 		}
 
-		if (WrappedDX11Resource)
 		{
-			D3D11on12Device->ReleaseWrappedResources(&WrappedDX11Resource, 1);
-			WrappedDX11Resource = nullptr;
+			for (auto Iter : WrappedDX11ResourceMap)
+			{
+				D3D11on12Device->ReleaseWrappedResources(&Iter.Value, 1);
+			}
+			WrappedDX11ResourceMap.Reset();
 		}
 
 		if (D3D11on12Device)
@@ -125,35 +119,53 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		}
 	}
 
-	void Tick_RenderThread()
+	ID3D11Texture2D* GetTextureResource(FTextureRHIRef InTexture)
+	{
+		const FString RHIName = GDynamicRHI->GetName();
+		
+		if (RHIName == TEXT("D3D11"))
+		{
+			return static_cast<ID3D11Texture2D*>(InTexture->GetNativeResource());
+		}
+		else if (RHIName == TEXT("D3D12"))
+		{
+			if (auto Iter = WrappedDX11ResourceMap.Find(InTexture))
+				return static_cast<ID3D11Texture2D*>(*Iter);
+
+			ID3D12Resource* NativeTex = static_cast<ID3D12Resource*>(InTexture->GetNativeResource());
+			ID3D11Resource* WrappedDX11Resource = nullptr;
+			
+			D3D11_RESOURCE_FLAGS rf11 = {};
+			verify(D3D11on12Device->CreateWrappedResource(
+				NativeTex, &rf11,
+				D3D12_RESOURCE_STATE_COPY_SOURCE,
+				D3D12_RESOURCE_STATE_PRESENT, __uuidof(ID3D11Resource),
+				(void**)&WrappedDX11Resource) == S_OK);
+
+			NativeTex->Release();
+
+			WrappedDX11ResourceMap.Add(InTexture, WrappedDX11Resource);
+
+			return static_cast<ID3D11Texture2D*>(WrappedDX11Resource);
+		}
+		
+		return nullptr;
+	}
+
+	void Tick_RenderThread(FTextureRHIRef InTexture)
 	{
 		const FString RHIName = GDynamicRHI->GetName();
 
 		if (!DeviceContext)
 			return;
 
-		if (RHIName == TEXT("D3D11"))
-		{
-			ID3D11Texture2D* NativeTex = (ID3D11Texture2D*)InTexture->GetNativeResource();
-
-			this->DeviceContext->CopyResource(SendingTexture, NativeTex);
-			this->DeviceContext->Flush();
-
-			verify(senders.UpdateSender(SenderName_str.c_str(),
-				Width, Height,
-				SharedSendingHandle));
-		}
-		else if (RHIName == TEXT("D3D12"))
-		{
-			// D3D11on12Device->AcquireWrappedResources(&WrappedDX11Resource, 1);
-			DeviceContext->CopyResource(SendingTexture, WrappedDX11Resource);
-			// D3D11on12Device->ReleaseWrappedResources(&WrappedDX11Resource, 1);
-			DeviceContext->Flush();
-
-			verify(senders.UpdateSender(SenderName_str.c_str(),
-				Width, Height,
-				SharedSendingHandle));
-		}
+		auto Texture = GetTextureResource(InTexture);
+		DeviceContext->CopyResource(SendingTexture, Texture);
+		DeviceContext->Flush();
+		
+		verify(senders.UpdateSender(SenderName_str.c_str(),
+			Width, Height,
+			SharedSendingHandle));
 	}
 };
 
@@ -174,7 +186,7 @@ bool USpout2MediaCapture::ValidateMediaOutput() const
 	return true;
 }
 
-bool USpout2MediaCapture::CaptureSceneViewportImpl(TSharedPtr<FSceneViewport>& InSceneViewport)
+bool USpout2MediaCapture::InitializeCapture()
 {
 	USpout2MediaOutput* Output = CastChecked<USpout2MediaOutput>(MediaOutput);
 	check(Output);
@@ -192,7 +204,7 @@ void USpout2MediaCapture::StopCaptureImpl(bool bAllowPendingFrameToBeProcess)
 	DisposeSpout();
 }
 
-void USpout2MediaCapture::OnRHITextureCaptured_RenderingThread(const FCaptureBaseData& InBaseData,
+void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(const FCaptureBaseData& InBaseData,
 	TSharedPtr<FMediaCaptureUserData, ESPMode::ThreadSafe> InUserData, FTextureRHIRef InTexture)
 {
 	USpout2MediaOutput* Output = CastChecked<USpout2MediaOutput>(MediaOutput);
@@ -218,7 +230,7 @@ void USpout2MediaCapture::OnRHITextureCaptured_RenderingThread(const FCaptureBas
 
 	if (Context)
 	{
-		Context->Tick_RenderThread();
+		Context->Tick_RenderThread(InTexture);
 	}
 }
 
@@ -226,8 +238,6 @@ void USpout2MediaCapture::OnRHITextureCaptured_RenderingThread(const FCaptureBas
 
 bool USpout2MediaCapture::InitSpout(USpout2MediaOutput* Output)
 {
-	// Context = MakeShared<FSpoutSenderContext, ESPMode::ThreadSafe>(FName(Output->SourceName));
-	
 	SetState(EMediaCaptureState::Capturing);
 	return true;
 }

@@ -21,7 +21,7 @@
 		{
 			"Name": "Spout2Media",
 			"Type": "Runtime",
-			"LoadingPhase": "PostEngineInit",
+			"LoadingPhase": "Default",
 			"WhitelistPlatforms": [
 				"Win64"
 			]

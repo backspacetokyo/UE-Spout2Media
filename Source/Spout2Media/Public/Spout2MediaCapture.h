@@ -23,16 +23,15 @@ public:
 protected:
 	virtual bool ValidateMediaOutput() const override;
 
-	virtual bool CaptureSceneViewportImpl(TSharedPtr<FSceneViewport>& InSceneViewport) override;
-	virtual bool UpdateSceneViewportImpl(TSharedPtr<FSceneViewport>& InSceneViewport) override;
+	virtual bool InitializeCapture() override;
 	
-	virtual bool CaptureRenderTargetImpl(UTextureRenderTarget2D* InRenderTarget) override { return false; }
+	virtual bool UpdateSceneViewportImpl(TSharedPtr<FSceneViewport>& InSceneViewport) override;
 	virtual bool UpdateRenderTargetImpl(UTextureRenderTarget2D* InRenderTarget) override { return false; }
 	
 	virtual void StopCaptureImpl(bool bAllowPendingFrameToBeProcess) override;
 
-	virtual bool ShouldCaptureRHITexture() const override { return true; }
-	virtual void OnRHITextureCaptured_RenderingThread(const FCaptureBaseData& InBaseData, TSharedPtr<FMediaCaptureUserData, ESPMode::ThreadSafe> InUserData, FTextureRHIRef InTexture) override;
+	virtual bool ShouldCaptureRHIResource() const override { return true; }
+	virtual void OnRHIResourceCaptured_RenderingThread(const FCaptureBaseData& InBaseData, TSharedPtr<FMediaCaptureUserData, ESPMode::ThreadSafe> InUserData, FTextureRHIRef InTexture) override;
 
 private:
 
