@@ -16,8 +16,7 @@ bool USpout2MediaOutput::Validate(FString& OutFailureReason) const
 
 FIntPoint USpout2MediaOutput::GetRequestedSize() const
 {
-	FIntPoint Result = FIntPoint(1920, 1080);
-	return Result;
+	return OutputSize;
 }
 
 EPixelFormat USpout2MediaOutput::GetRequestedPixelFormat() const

@@ -18,6 +18,9 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Spout2 Media")
 	FString SenderName = FString("UnrealEngile");
 
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Spout2 Media")
+	FIntPoint OutputSize = FIntPoint(1920, 1080);
+	
 	virtual bool Validate(FString& OutFailureReason) const override;
 
 	virtual FIntPoint GetRequestedSize() const override;
