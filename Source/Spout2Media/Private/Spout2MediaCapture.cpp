@@ -168,7 +168,7 @@ struct USpout2MediaCapture::FSpoutSenderContext
 };
 
 USpout2MediaCapture::USpout2MediaCapture(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+	: Super()
 {
 }
 
