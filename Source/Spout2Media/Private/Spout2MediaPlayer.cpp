@@ -291,12 +291,21 @@ void FSpout2MediaPlayer::FlushSamples()
 	TextureSample.Reset();
 }
 
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4
+IMediaSamples::EFetchBestSampleResult FSpout2MediaPlayer::FetchBestVideoSampleForTimeRange(
+	const TRange<FMediaTimeStamp>& TimeRange, TSharedPtr<IMediaTextureSample, ESPMode::ThreadSafe>& OutSample,
+	bool bReverse, bool bConsistentResult)
+{
+	return IMediaSamples::FetchBestVideoSampleForTimeRange(TimeRange, OutSample, bReverse, bConsistentResult);
+}
+#else
 IMediaSamples::EFetchBestSampleResult FSpout2MediaPlayer::FetchBestVideoSampleForTimeRange(
 	const TRange<FMediaTimeStamp>& TimeRange, TSharedPtr<IMediaTextureSample, ESPMode::ThreadSafe>& OutSample,
 	bool bReverse)
 {
 	return IMediaSamples::FetchBestVideoSampleForTimeRange(TimeRange, OutSample, bReverse);
 }
+#endif
 
 bool FSpout2MediaPlayer::PeekVideoSampleTime(FMediaTimeStamp& TimeStamp)
 {
