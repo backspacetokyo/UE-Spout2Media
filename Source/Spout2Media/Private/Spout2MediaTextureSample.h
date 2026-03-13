@@ -19,7 +19,7 @@ class SPOUT2MEDIA_API FSpout2MediaTextureSample
 	: public IMediaTextureSample
 	, public IMediaPoolable
 {
-	FTexture2DRHIRef Texture;
+	FTextureRHIRef Texture;
 
 	FString RHIName;
 	ID3D11Resource* WrappedDX11Resource = nullptr;

@@ -202,16 +202,20 @@ void USpout2MediaCapture::StopCaptureImpl(bool bAllowPendingFrameToBeProcess)
 	DisposeSpout();
 }
 
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4
+void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(FRHICommandListImmediate& RHICmdList, const FCaptureBaseData& InBaseData,
+	TSharedPtr<FMediaCaptureUserData, ESPMode::ThreadSafe> InUserData, FTextureRHIRef InTexture)
+#else
 void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(const FCaptureBaseData& InBaseData,
 	TSharedPtr<FMediaCaptureUserData, ESPMode::ThreadSafe> InUserData, FTextureRHIRef InTexture)
+#endif
 {
 	USpout2MediaOutput* Output = CastChecked<USpout2MediaOutput>(MediaOutput);
-	
+
 	const FString SenderName = Output->SenderName;
-	auto InTexture2D = InTexture->GetTexture2D();
-	uint32 Width = InTexture2D->GetSizeX();
-	uint32 Height = InTexture2D->GetSizeY();
-	EPixelFormat PixelFormat = InTexture2D->GetFormat();
+	uint32 Width = InTexture->GetSizeX();
+	uint32 Height = InTexture->GetSizeY();
+	EPixelFormat PixelFormat = InTexture->GetFormat();
 
 	if (!Context
 		|| Context->SenderName != SenderName
