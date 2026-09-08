@@ -8,6 +8,13 @@
 
 #include "Spout2MediaOutput.generated.h"
 
+UENUM(BlueprintType)
+enum class ESpout2MediaOutputFormat : uint8
+{
+	RGB10A2 UMETA(DisplayName = "10-bit RGB / 2-bit Alpha (RGB10A2)"),
+	RGBA8 UMETA(DisplayName = "8-bit RGBA (RGBA8)")
+};
+
 UCLASS(BlueprintType, meta=(DisplayName="Spout2 Media Output"))
 class SPOUT2MEDIA_API USpout2MediaOutput
 	: public UMediaOutput
@@ -20,6 +27,10 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Spout2 Media")
 	FIntPoint OutputSize = FIntPoint(1920, 1080);
+
+	/** Restart capture after changing this. Scene alpha also requires the project's Alpha Output setting. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Spout2 Media")
+	ESpout2MediaOutputFormat OutputFormat = ESpout2MediaOutputFormat::RGB10A2;
 	
 	virtual bool Validate(FString& OutFailureReason) const override;
 
