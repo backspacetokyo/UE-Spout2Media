@@ -2,6 +2,10 @@
 
 
 #include "Spout2MediaCapture.h"
+#include "ID3D12DynamicRHI.h"
+#include "RenderingThread.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogSpoutInterop, Log, All);
 
 #include "Windows/AllowWindowsPlatformTypes.h" 
 #include <d3d11on12.h>
@@ -20,7 +24,10 @@ struct USpout2MediaCapture::FSpoutSenderContext
 	ID3D11Device* D3D11Device = nullptr;
 	
 	ID3D11On12Device* D3D11on12Device = nullptr;
-	TMap<FTextureRHIRef, ID3D11Resource*> WrappedDX11ResourceMap;
+	TMap<FTextureRHIRef, TRefCountPtr<ID3D11Resource>> WrappedDX11ResourceMap;
+	bool bReady = false;
+	uint64 SentFrames = 0;
+	DXGI_FORMAT SharedFormat = DXGI_FORMAT_UNKNOWN;
 
 	spoutSenderNames senders;
 	spoutDirectX sdx;
@@ -52,6 +59,7 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		if (RHIName == TEXT("D3D11"))
 		{
 			D3D11Device = static_cast<ID3D11Device*>(GDynamicRHI->RHIGetNativeDevice());
+			D3D11Device->AddRef(); // RHIGetNativeDevice returns a borrowed pointer.
 			D3D11Device->GetImmediateContext(&DeviceContext);
 		}
 		else if (RHIName == TEXT("D3D12"))
@@ -59,31 +67,70 @@ struct USpout2MediaCapture::FSpoutSenderContext
 			ID3D12Device* Device12 = static_cast<ID3D12Device*>(GDynamicRHI->RHIGetNativeDevice());
 			UINT DeviceFlags11 = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
-			verify(D3D11On12CreateDevice(
+			IUnknown* Queues[] = { GetID3D12DynamicRHI()->RHIGetCommandQueue() };
+			const HRESULT Result = D3D11On12CreateDevice(
 				Device12,
 				DeviceFlags11,
 				nullptr,
 				0,
-				nullptr,
-				0,
+				Queues,
+				1,
 				0,
 				&D3D11Device,
 				&DeviceContext,
 				nullptr
-			) == S_OK);
-
-			verify(D3D11Device->QueryInterface(__uuidof(ID3D11On12Device), (void**)&D3D11on12Device) == S_OK);
+			);
+			if (FAILED(Result))
+			{
+				UE_LOG(LogSpoutInterop, Error, TEXT("D3D11On12 initialization failed: 0x%08x"), Result);
+				return;
+			}
+			const HRESULT InterfaceResult = D3D11Device->QueryInterface(__uuidof(ID3D11On12Device), (void**)&D3D11on12Device);
+			if (FAILED(InterfaceResult))
+			{
+				UE_LOG(LogSpoutInterop, Error, TEXT("D3D11On12 interface failed: 0x%08x"), InterfaceResult);
+				return;
+			}
+		}
+		else
+		{
+			UE_LOG(LogSpoutInterop, Error, TEXT("Unsupported RHI: %s"), *RHIName);
+			return;
 		}
 
-		ID3D12Resource* NativeTex = (ID3D12Resource*)InTexture->GetNativeResource();
-		D3D12_RESOURCE_DESC desc = NativeTex->GetDesc();
-		
-		verify(senders.CreateSender(SenderName_str.c_str(), Width, Height, SharedSendingHandle, desc.Format));
-		verify(sdx.CreateSharedDX11Texture(D3D11Device, Width, Height, desc.Format, &SendingTexture, SharedSendingHandle));
+		DXGI_FORMAT Format = DXGI_FORMAT_UNKNOWN;
+		if (D3D11on12Device)
+		{
+			Format = static_cast<ID3D12Resource*>(InTexture->GetNativeResource())->GetDesc().Format;
+		}
+		else
+		{
+			D3D11_TEXTURE2D_DESC Desc;
+			static_cast<ID3D11Texture2D*>(InTexture->GetNativeResource())->GetDesc(&Desc);
+			Format = Desc.Format;
+		}
+		if (!sdx.CreateSharedDX11Texture(D3D11Device, Width, Height, Format, &SendingTexture, SharedSendingHandle)
+			|| !senders.CreateSender(SenderName_str.c_str(), Width, Height, SharedSendingHandle, Format))
+		{
+			UE_LOG(LogSpoutInterop, Error, TEXT("Shared Spout texture creation failed"));
+			return;
+		}
+		bReady = true;
+		SharedFormat = Format;
+		UE_LOG(LogSpoutInterop, Log, TEXT("Sender ready: %s %ux%u format=%u shared-graphics-queue"), *SenderName, Width, Height, uint32(Format));
 	}
 
 	void DisposeSpout()
 	{
+		if (bReady)
+		{
+			senders.ReleaseSenderName(SenderName_str.c_str());
+			UE_LOG(LogSpoutInterop, Log, TEXT("Sender stopped: %s frames=%llu"), *SenderName, SentFrames);
+		}
+		bReady = false;
+		// Release COM wrappers while their device/context are still alive. Each
+		// per-frame acquisition has already been released and flushed.
+		WrappedDX11ResourceMap.Reset();
 		if (SendingTexture)
 		{
 			SendingTexture->Release();
@@ -94,14 +141,6 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		{
 			DeviceContext->Release();
 			DeviceContext = nullptr;
-		}
-
-		{
-			for (auto Iter : WrappedDX11ResourceMap)
-			{
-				D3D11on12Device->ReleaseWrappedResources(&Iter.Value, 1);
-			}
-			WrappedDX11ResourceMap.Reset();
 		}
 
 		if (D3D11on12Device)
@@ -128,21 +167,25 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		else if (RHIName == TEXT("D3D12"))
 		{
 			if (auto Iter = WrappedDX11ResourceMap.Find(InTexture))
-				return static_cast<ID3D11Texture2D*>(*Iter);
+				return static_cast<ID3D11Texture2D*>(Iter->GetReference());
 
 			ID3D12Resource* NativeTex = static_cast<ID3D12Resource*>(InTexture->GetNativeResource());
 			ID3D11Resource* WrappedDX11Resource = nullptr;
 			
 			D3D11_RESOURCE_FLAGS rf11 = {};
-			verify(D3D11on12Device->CreateWrappedResource(
+			const HRESULT Result = D3D11on12Device->CreateWrappedResource(
 				NativeTex, &rf11,
 				D3D12_RESOURCE_STATE_COPY_SOURCE,
-				D3D12_RESOURCE_STATE_PRESENT, __uuidof(ID3D11Resource),
-				(void**)&WrappedDX11Resource) == S_OK);
+				D3D12_RESOURCE_STATE_COPY_SOURCE, __uuidof(ID3D11Resource),
+				(void**)&WrappedDX11Resource);
+			if (FAILED(Result))
+			{
+				UE_LOG(LogSpoutInterop, Error, TEXT("CreateWrappedResource failed: 0x%08x"), Result);
+				return nullptr;
+			}
 
-			NativeTex->Release();
-
-			WrappedDX11ResourceMap.Add(InTexture, WrappedDX11Resource);
+			// GetNativeResource is borrowed; never Release the RHI's reference.
+			WrappedDX11ResourceMap.Add(InTexture, TRefCountPtr<ID3D11Resource>(WrappedDX11Resource, false));
 
 			return static_cast<ID3D11Texture2D*>(WrappedDX11Resource);
 		}
@@ -150,20 +193,33 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		return nullptr;
 	}
 
-	void Tick_RenderThread(FTextureRHIRef InTexture)
+	bool Tick_RenderThread(FTextureRHIRef InTexture)
 	{
 		const FString RHIName = GDynamicRHI->GetName();
 
-		if (!DeviceContext)
-			return;
+		if (!bReady || !DeviceContext)
+			return false;
 
 		auto Texture = GetTextureResource(InTexture);
+		if (!Texture)
+			return false;
+		if (D3D11on12Device)
+		{
+			ID3D11Resource* Wrapped = Texture;
+			D3D11on12Device->AcquireWrappedResources(&Wrapped, 1);
+		}
 		DeviceContext->CopyResource(SendingTexture, Texture);
+		if (D3D11on12Device)
+		{
+			ID3D11Resource* Wrapped = Texture;
+			D3D11on12Device->ReleaseWrappedResources(&Wrapped, 1);
+		}
 		DeviceContext->Flush();
+		++SentFrames;
 		
-		verify(senders.UpdateSender(SenderName_str.c_str(),
+		return senders.UpdateSender(SenderName_str.c_str(),
 			Width, Height,
-			SharedSendingHandle));
+			SharedSendingHandle, SharedFormat);
 	}
 };
 
@@ -199,7 +255,16 @@ bool USpout2MediaCapture::UpdateSceneViewportImpl(TSharedPtr<FSceneViewport>& In
 void USpout2MediaCapture::StopCaptureImpl(bool bAllowPendingFrameToBeProcess)
 {
 	Super::StopCaptureImpl(bAllowPendingFrameToBeProcess);
-	DisposeSpout();
+	SetState(EMediaCaptureState::Stopped);
+	TSharedPtr<FSpoutSenderContext, ESPMode::ThreadSafe> OldContext = MoveTemp(Context);
+	ENQUEUE_RENDER_COMMAND(StopSpoutInterop)([OldContext = MoveTemp(OldContext)](FRHICommandListImmediate& RHICmdList) mutable
+	{
+		if (OldContext)
+		{
+			RHICmdList.SubmitAndBlockUntilGPUIdle();
+			OldContext.Reset();
+		}
+	});
 }
 
 #if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4
@@ -224,7 +289,10 @@ void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(const FCaptureBa
 		|| Context->PixelFormat != PixelFormat)
 	{
 		if (Context)
+		{
+			RHICmdList.SubmitAndBlockUntilGPUIdle();
 			Context.Reset();
+		}
 		
 		Context = MakeShared<FSpoutSenderContext, ESPMode::ThreadSafe>(
 			SenderName, Width, Height, PixelFormat, InTexture);
@@ -232,7 +300,26 @@ void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(const FCaptureBa
 
 	if (Context)
 	{
-		Context->Tick_RenderThread(InTexture);
+		bool bSent = false;
+		if (IsRHID3D12())
+		{
+			// Flush UE's producer work before inserting D3D11On12 commands on
+			// the same graphics queue. Restore CopySrc so RHI state tracking
+			// agrees with the state left by ReleaseWrappedResources.
+			RHICmdList.Transition(FRHITransitionInfo(InTexture, ERHIAccess::Unknown, ERHIAccess::CopySrc));
+			RHICmdList.ImmediateFlush(EImmediateFlushType::FlushRHIThread);
+			GetID3D12DynamicRHI()->RHIRunOnQueue(ED3D12RHIRunOnQueueType::Graphics,
+				[Sender = Context, InTexture, &bSent](ID3D12CommandQueue*) { bSent = Sender->Tick_RenderThread(InTexture); }, true);
+		}
+		else
+		{
+			bSent = Context->Tick_RenderThread(InTexture);
+		}
+		if (!bSent)
+		{
+			UE_LOG(LogSpoutInterop, Error, TEXT("Spout submission failed; stopping capture"));
+			SetState(EMediaCaptureState::Error);
+		}
 	}
 }
 
