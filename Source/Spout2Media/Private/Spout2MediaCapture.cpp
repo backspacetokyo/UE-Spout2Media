@@ -50,11 +50,17 @@ struct USpout2MediaCapture::FSpoutSenderContext
 	void InitSpout(FTextureRHIRef InTexture)
 	{
 		const FString RHIName = GDynamicRHI->GetName();
+		DXGI_FORMAT TextureFormat = DXGI_FORMAT_UNKNOWN;
 
 		if (RHIName == TEXT("D3D11"))
 		{
 			D3D11Device = static_cast<ID3D11Device*>(GDynamicRHI->RHIGetNativeDevice());
+			// Retain the borrowed RHI device for the matching Release in DisposeSpout.
+			D3D11Device->AddRef();
 			D3D11Device->GetImmediateContext(&DeviceContext);
+			D3D11_TEXTURE2D_DESC Desc = {};
+			static_cast<ID3D11Texture2D*>(InTexture->GetNativeResource())->GetDesc(&Desc);
+			TextureFormat = Desc.Format;
 		}
 		else if (RHIName == TEXT("D3D12"))
 		{
@@ -76,13 +82,11 @@ struct USpout2MediaCapture::FSpoutSenderContext
 			) == S_OK);
 
 			verify(D3D11Device->QueryInterface(__uuidof(ID3D11On12Device), (void**)&D3D11on12Device) == S_OK);
+			TextureFormat = static_cast<ID3D12Resource*>(InTexture->GetNativeResource())->GetDesc().Format;
 		}
 
-		ID3D12Resource* NativeTex = (ID3D12Resource*)InTexture->GetNativeResource();
-		D3D12_RESOURCE_DESC desc = NativeTex->GetDesc();
-		
-		verify(senders.CreateSender(SenderName_str.c_str(), Width, Height, SharedSendingHandle, desc.Format));
-		verify(sdx.CreateSharedDX11Texture(D3D11Device, Width, Height, desc.Format, &SendingTexture, SharedSendingHandle));
+		verify(senders.CreateSender(SenderName_str.c_str(), Width, Height, SharedSendingHandle, TextureFormat));
+		verify(sdx.CreateSharedDX11Texture(D3D11Device, Width, Height, TextureFormat, &SendingTexture, SharedSendingHandle));
 	}
 
 	void DisposeSpout()
@@ -223,11 +227,8 @@ void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(const FCaptureBa
 #if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION < 4
 	FRHICommandListImmediate& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
 #endif
-	if (IsRHID3D12())
-	{
-		// Enqueue UE's producer work before queuing the external copy.
-		RHICmdList.ImmediateFlush(EImmediateFlushType::FlushRHIThread);
-	}
+	// Submit UE's producer work; D3D11 also shares its immediate context with the RHI thread.
+	RHICmdList.ImmediateFlush(EImmediateFlushType::FlushRHIThread);
 	uint32 Width = InTexture->GetSizeX();
 	uint32 Height = InTexture->GetSizeY();
 	EPixelFormat PixelFormat = InTexture->GetFormat();
