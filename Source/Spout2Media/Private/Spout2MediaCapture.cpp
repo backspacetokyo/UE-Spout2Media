@@ -2,6 +2,8 @@
 
 
 #include "Spout2MediaCapture.h"
+#include "RHICommandList.h"
+#include "ID3D12DynamicRHI.h"
 
 #include "Windows/AllowWindowsPlatformTypes.h" 
 #include <d3d11on12.h>
@@ -58,14 +60,15 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		{
 			ID3D12Device* Device12 = static_cast<ID3D12Device*>(GDynamicRHI->RHIGetNativeDevice());
 			UINT DeviceFlags11 = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+			IUnknown* GraphicsQueue = static_cast<ID3D12CommandQueue*>(GDynamicRHI->RHIGetNativeGraphicsQueue());
 
 			verify(D3D11On12CreateDevice(
 				Device12,
 				DeviceFlags11,
 				nullptr,
 				0,
-				nullptr,
-				0,
+				&GraphicsQueue,
+				1,
 				0,
 				&D3D11Device,
 				&DeviceContext,
@@ -99,7 +102,7 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		{
 			for (auto Iter : WrappedDX11ResourceMap)
 			{
-				D3D11on12Device->ReleaseWrappedResources(&Iter.Value, 1);
+				Iter.Value->Release();
 			}
 			WrappedDX11ResourceMap.Reset();
 		}
@@ -130,6 +133,7 @@ struct USpout2MediaCapture::FSpoutSenderContext
 			if (auto Iter = WrappedDX11ResourceMap.Find(InTexture))
 				return static_cast<ID3D11Texture2D*>(*Iter);
 
+			// Borrowed from the RHI texture; do not Release this pointer.
 			ID3D12Resource* NativeTex = static_cast<ID3D12Resource*>(InTexture->GetNativeResource());
 			ID3D11Resource* WrappedDX11Resource = nullptr;
 			
@@ -137,12 +141,12 @@ struct USpout2MediaCapture::FSpoutSenderContext
 			verify(D3D11on12Device->CreateWrappedResource(
 				NativeTex, &rf11,
 				D3D12_RESOURCE_STATE_COPY_SOURCE,
-				D3D12_RESOURCE_STATE_PRESENT, __uuidof(ID3D11Resource),
+				D3D12_RESOURCE_STATE_COPY_SOURCE, __uuidof(ID3D11Resource),
 				(void**)&WrappedDX11Resource) == S_OK);
 
-			NativeTex->Release();
-
 			WrappedDX11ResourceMap.Add(InTexture, WrappedDX11Resource);
+			// New wrappers start acquired; use the same acquire/release cycle on every copy.
+			D3D11on12Device->ReleaseWrappedResources(&WrappedDX11Resource, 1);
 
 			return static_cast<ID3D11Texture2D*>(WrappedDX11Resource);
 		}
@@ -150,15 +154,18 @@ struct USpout2MediaCapture::FSpoutSenderContext
 		return nullptr;
 	}
 
-	void Tick_RenderThread(FTextureRHIRef InTexture)
+	void SendTexture(FTextureRHIRef InTexture)
 	{
-		const FString RHIName = GDynamicRHI->GetName();
-
 		if (!DeviceContext)
 			return;
 
 		auto Texture = GetTextureResource(InTexture);
+		ID3D11Resource* WrappedResource = Texture;
+		if (D3D11on12Device)
+			D3D11on12Device->AcquireWrappedResources(&WrappedResource, 1);
 		DeviceContext->CopyResource(SendingTexture, Texture);
+		if (D3D11on12Device)
+			D3D11on12Device->ReleaseWrappedResources(&WrappedResource, 1);
 		DeviceContext->Flush();
 		
 		verify(senders.UpdateSender(SenderName_str.c_str(),
@@ -213,6 +220,14 @@ void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(const FCaptureBa
 	USpout2MediaOutput* Output = CastChecked<USpout2MediaOutput>(MediaOutput);
 
 	const FString SenderName = Output->SenderName;
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION < 4
+	FRHICommandListImmediate& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
+#endif
+	if (IsRHID3D12())
+	{
+		// Enqueue UE's producer work before queuing the external copy.
+		RHICmdList.ImmediateFlush(EImmediateFlushType::FlushRHIThread);
+	}
 	uint32 Width = InTexture->GetSizeX();
 	uint32 Height = InTexture->GetSizeY();
 	EPixelFormat PixelFormat = InTexture->GetFormat();
@@ -232,7 +247,19 @@ void USpout2MediaCapture::OnRHIResourceCaptured_RenderingThread(const FCaptureBa
 
 	if (Context)
 	{
-		Context->Tick_RenderThread(InTexture);
+		if (IsRHID3D12())
+		{
+			// The RHI thread can finish before the D3D12 submission thread submits UE's work.
+			GetID3D12DynamicRHI()->RHIRunOnQueue(ED3D12RHIRunOnQueueType::Graphics,
+				[SenderContext = Context, InTexture](ID3D12CommandQueue*)
+				{
+					SenderContext->SendTexture(InTexture);
+				}, /*bWaitForSubmission*/ true);
+		}
+		else
+		{
+			Context->SendTexture(InTexture);
+		}
 	}
 }
 
